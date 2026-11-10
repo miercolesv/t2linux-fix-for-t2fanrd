@@ -1,0 +1,84 @@
+#!/bin/bash
+# t2fancurve - linear fan curve for T2 Macs using the macsmc_hwmon driver
+#
+# Reads the hottest of the CPU (coretemp) and GPU (amdgpu, if present),
+# maps it linearly from LOW_TEMP (fan minimum) to HIGH_TEMP (fan maximum)
+# and writes the result to every fanN_target exposed by macsmc_hwmon.
+# On exit the fans are handed back to the SMC.
+
+CONFIG=/etc/t2fancurve.conf
+
+LOW_TEMP=60
+HIGH_TEMP=80
+INTERVAL=2
+
+# shellcheck source=/dev/null
+[ -r "$CONFIG" ] && . "$CONFIG"
+
+log() { echo "$*"; }
+
+find_hwmon() {
+    local name
+    for d in /sys/class/hwmon/hwmon*; do
+        read -r name < "$d/name" 2>/dev/null || continue
+        [ "$name" = "$1" ] && { echo "$d"; return 0; }
+    done
+    return 1
+}
+
+if [ "$LOW_TEMP" -ge "$HIGH_TEMP" ]; then
+    log "LOW_TEMP ($LOW_TEMP) must be lower than HIGH_TEMP ($HIGH_TEMP)"
+    exit 1
+fi
+
+SMC=$(find_hwmon macsmc_hwmon) || { log "macsmc_hwmon not found - is this a T2 Mac on a kernel with the macsmc drivers?"; exit 1; }
+CPU=$(find_hwmon coretemp)     || { log "coretemp not found"; exit 1; }
+GPU=$(find_hwmon amdgpu)       || GPU=""
+
+PARAM=/sys/module/macsmc_hwmon/parameters/fan_control
+if [ "$(cat "$PARAM" 2>/dev/null)" != "Y" ]; then
+    log "Fan control is disabled in the driver."
+    log "Add 'options macsmc-hwmon fan_control=1' to /etc/modprobe.d/macsmc-hwmon.conf and reboot."
+    exit 1
+fi
+
+shopt -s nullglob
+TARGETS=("$SMC"/fan*_target)
+[ ${#TARGETS[@]} -eq 0 ] && { log "No fan*_target files in $SMC"; exit 1; }
+
+log "SMC: $SMC, CPU: $CPU, GPU: ${GPU:-none}"
+log "Curve: minimum at ${LOW_TEMP}°C, maximum at ${HIGH_TEMP}°C, every ${INTERVAL}s, ${#TARGETS[@]} fan(s)"
+
+release() {
+    for f in "${TARGETS[@]}"; do echo 0 > "$f"; done
+    log "Fans handed back to the SMC"
+    exit 0
+}
+trap release TERM INT
+
+last=""
+while true; do
+    read -r t < "$CPU/temp1_input"
+    if [ -n "$GPU" ] && read -r g < "$GPU/temp1_input" 2>/dev/null && [ "$g" -gt "$t" ]; then
+        t=$g
+    fi
+    t=$((t / 1000))
+
+    line="${t}°C ->"
+    for tgt in "${TARGETS[@]}"; do
+        n=${tgt##*/fan}; n=${n%_target}
+        read -r min < "$SMC/fan${n}_min"
+        read -r max < "$SMC/fan${n}_max"
+        if   [ "$t" -le "$LOW_TEMP" ];  then rpm=$min
+        elif [ "$t" -ge "$HIGH_TEMP" ]; then rpm=$max
+        else rpm=$(( min + (max - min) * (t - LOW_TEMP) / (HIGH_TEMP - LOW_TEMP) ))
+        fi
+        if ! echo "$rpm" > "$tgt" 2>/dev/null; then
+            log "Failed to write $tgt"
+        fi
+        line="$line fan$n ${rpm}rpm"
+    done
+
+    [ "$line" != "$last" ] && log "$line" && last=$line
+    sleep "$INTERVAL" & wait $!
+done
