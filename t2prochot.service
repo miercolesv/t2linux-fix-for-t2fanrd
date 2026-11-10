@@ -1,0 +1,10 @@
+[Unit]
+Description=Clear BD PROCHOT so the SMC cannot pin the CPU at 800 MHz
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/t2prochot
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

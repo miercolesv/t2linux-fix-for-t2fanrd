@@ -1,0 +1,4 @@
+#!/bin/sh
+# Reapply after suspend/hibernate, which can restore the MSR to its default.
+[ "$1" = "post" ] && /usr/local/bin/t2prochot
+exit 0

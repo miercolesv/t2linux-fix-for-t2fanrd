@@ -1,0 +1,39 @@
+#!/bin/bash
+# t2prochot - stop the SMC from forcing the CPU to 800 MHz on battery-less Macs
+#
+# A MacBook with a dead or disconnected battery has its SMC assert PROCHOT,
+# which pins the CPU at its minimum clock. Clearing bit 0 (BD PROCHOT) of
+# MSR 0x1FC makes the CPU ignore that external signal. The CPU's own
+# thermal protection is unaffected.
+
+MSR=0x1FC
+
+if ! command -v rdmsr >/dev/null || ! command -v wrmsr >/dev/null; then
+    echo "rdmsr/wrmsr not found - install msr-tools"
+    exit 1
+fi
+
+modprobe msr || { echo "Could not load the msr module"; exit 1; }
+
+changed=0; total=0; failed=0
+for dev in /dev/cpu/[0-9]*/msr; do
+    cpu=${dev#/dev/cpu/}; cpu=${cpu%/msr}
+    total=$((total + 1))
+    if ! val=$(rdmsr -p "$cpu" "$MSR" 2>/dev/null); then
+        echo "cpu$cpu: cannot read $MSR"
+        failed=$((failed + 1)); continue
+    fi
+    if (( 0x$val & 1 )); then
+        new=$(printf '0x%x' $(( 0x$val & ~1 )))
+        if wrmsr -p "$cpu" "$MSR" "$new" 2>/dev/null; then
+            echo "cpu$cpu: 0x$val -> $new"
+            changed=$((changed + 1))
+        else
+            echo "cpu$cpu: write failed (Secure Boot lockdown?)"
+            failed=$((failed + 1))
+        fi
+    fi
+done
+
+echo "BD PROCHOT cleared on $changed of $total CPUs, $((total - changed - failed)) already clear, $failed failed"
+[ "$failed" -eq 0 ]
