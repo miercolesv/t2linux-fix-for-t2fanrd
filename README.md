@@ -24,7 +24,7 @@ The repo also includes an optional fix for Macs running without a battery, which
 ## Install
 
 ```
-git clone https://github.com/<user>/t2fancurve
+git clone https://github.com/miercolesv/t2linux-fix-for-t2fanrd t2fancurve
 cd t2fancurve
 sudo ./install.sh
 ```
