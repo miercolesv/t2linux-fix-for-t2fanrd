@@ -1,4 +1,4 @@
-## MADE BY CLAUDE OPUS 5.5 but it work fine, i tested myself.
+# MADE BY CLAUDE OPUS 5.5 but it work fine, i tested myself.
 ### Includes optional PROCHOT patch to unthrottle 800Mhz limit. 
 
 
@@ -6,7 +6,7 @@ Fan control for Intel Macs with the T2 chip on Linux kernels that use the `macsm
 
 From kernel 7.3, T2 Macs moved from the patched `applesmc` driver to the new `macsmc` drivers. Fan daemons written for the old interface, such as t2fanrd, fail with `Error: Fan not found`, and with nothing driving them the SMC runs the fans at full speed.
 
-t2fancurve is a small bash script that reads the CPU and GPU temperature and sets the fan speed on a linear curve: minimum speed below `LOW_TEMP`, maximum speed above `HIGH_TEMP`, proportional in between. It has no dependencies beyond bash and systemd.
+t2fancurve is a small bash script that reads the CPU and GPU temperature and sets the fan speed on a linear curve: minimum speed below `LOW_TEMP`, maximum speed above `HIGH_TEMP`, proportional in between. The temperature is averaged over a few seconds and the fan speed is ramped rather than jumped, so a short processor burst does not make the fans roar. It has no dependencies beyond bash and systemd.
 
 The repo also includes an optional fix for Macs running without a battery, which are otherwise stuck at 800 MHz (see [t2prochot](#macs-without-a-working-battery-t2prochot)).
 
@@ -50,6 +50,13 @@ Edit `/etc/t2fancurve.conf`:
 | `LOW_TEMP`  | 60      | °C at or below which fans run at minimum      |
 | `HIGH_TEMP` | 80      | °C at or above which fans run at maximum      |
 | `INTERVAL`  | 2       | Seconds between checks                        |
+| `SMOOTHING` | 6       | Seconds the temperature is averaged over; 0 uses the raw reading |
+| `RAMP_UP`   | 200     | Fastest the fans may speed up, rpm per second; 0 = no limit |
+| `RAMP_DOWN` | 100     | Fastest the fans may slow down, rpm per second; 0 = no limit |
+
+All values are whole numbers. An existing config file is kept on reinstall; settings missing from it use the defaults above.
+
+With the defaults a burst of a second or two is barely audible, and a sustained load takes about 20 to 30 seconds to bring the fans from minimum to maximum. The CPU throttles itself at its maximum temperature in the meantime, as it does under the SMC's own slow fan control. For a quicker response lower `SMOOTHING` or raise `RAMP_UP`; `SMOOTHING=0` with both ramps at `0` gives the old instant behaviour.
 
 Then apply it:
 
@@ -75,7 +82,7 @@ To run it in the foreground for testing, stop the service and run `sudo /usr/loc
 
 ## Macs without a working battery: t2prochot
 
-If the battery is dead or disconnected, the SMC asserts PROCHOT and the CPU is pinned at 800 MHz no matter how cool it is. Check with:
+If the battery is dead or disconnected, or works but its SMC sensors are dead (`sensors` shows the battery temperatures at -127 °C), the SMC asserts PROCHOT and the CPU is pinned at 800 MHz no matter how cool it is. Check with:
 
 ```
 sudo modprobe msr
@@ -92,7 +99,7 @@ sudo ./install.sh --prochot
 
 This adds a boot service and a suspend hook that reapplies the setting after resume. Expect a kernel log warning about an MSR write; it is harmless. It will not work with Secure Boot lockdown enabled, since that blocks MSR writes.
 
-Do not use this on a Mac with a healthy battery. There PROCHOT is protecting the battery and power supply from overload. **(or do, idc what claude says, it's your computer your rules)**
+Do not use this on a Mac with a healthy battery. There PROCHOT is protecting the battery and power supply from overload **(or do lol, who is claude to say what you can or can't do. Your mac your rules)**
 
 ## Uninstall
 
@@ -105,7 +112,9 @@ This removes both tools. The config file and the modprobe option are left in pla
 ## Notes
 
 - When the script stops, it writes `0` to each `fanN_target`. This returns the fans to the SMC, which on some models means full speed. The service restarts automatically if it crashes.
-- The temperature used is the higher of `coretemp` (CPU package) and `amdgpu` (discrete GPU, if present).
+- The temperature used is the higher of `coretemp` (CPU package) and `amdgpu` (discrete GPU, if present). If it cannot be read, the fans go straight to maximum until it can.
+- On start the ramp begins from the speed the fans are actually turning at, so taking over from the SMC is gradual too.
+- The macOS throttles that the same no-battery condition triggers (kernel_task forced idle and the XCPM P-state limit) do not exist on Linux, so there is nothing to undo for them here.
 - hwmon numbers change between boots, so devices are found by name each time the script starts.
 
 ## Licence
