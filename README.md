@@ -1,4 +1,4 @@
-# MADE BY CLAUDE OPUS 5.5 but it work fine, i tested myself.
+# MADE BY CLAUDE FABLE 5.2 but it work fine, i tested myself.
 ### Includes optional PROCHOT patch to unthrottle 800Mhz limit. 
 
 
