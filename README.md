@@ -92,7 +92,7 @@ sudo ./install.sh --prochot
 
 This adds a boot service and a suspend hook that reapplies the setting after resume. Expect a kernel log warning about an MSR write; it is harmless. It will not work with Secure Boot lockdown enabled, since that blocks MSR writes.
 
-Do not use this on a Mac with a healthy battery. There PROCHOT is protecting the battery and power supply from overload.
+Do not use this on a Mac with a healthy battery. There PROCHOT is protecting the battery and power supply from overload. **(or do, idc what claude says, it's your computer your rules)**
 
 ## Uninstall
 
